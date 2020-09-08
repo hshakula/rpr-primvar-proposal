@@ -1,7 +1,7 @@
 # Overview
 
 In USD it's possible to define arbitrary data for a primitive that can be referenced in material graphs for any sort of calculations.
-This data can vary across the primitive in different ways (i.e. data interpolation):
+This data can vary across the primitive in different ways (i.e. interpolated differently):
 
 * per vertex - values defined for each vertex (position) - `vertex`
 * per face vertex - values defined for each vertex of each face - `faceVarying`
@@ -19,17 +19,14 @@ Trivial combination of geometry primitive and material primitive.
 ### Material 
 
 Let's say our material has `color` property.
-Instead of explicitly setting `color` value (to vec4/to texture/etc) we specify that `color` value is imported from the geometry that uses this material. For example, the name of the primvar used here is "rgbnoise".
-The material does not care how exactly a particular geometry calculates (exports) this value for each ray hit point.
-The material only declares that some primvar should be used here or there.
-If a particular geometry does not have a required primvar, we use some fallback value.
+In RPR, we can set this property to some constant color or material node that calculates color in runtime. For using primvar in material calculations, we only need to declare that we want to read particular primvar from the geometry (loose coupling). The material does not care how exactly a particular geometry calculates (exports) this value for each ray hit point. If a particular geometry does not have a required primvar, we use fallback value. Typically, primvar is identified by name. For example purposes, our target primvar is named "rgbnoise".
 
 ### Geometry
 
 Let's say our geometry primitive is a triangle mesh.
 This mesh has points, indices, and primvar of vec3 array type named "rgbnoise" with vertex interpolation (one vec3 value for each point).
 So this geometry should define an export socket with "rgbnoise" name.
-In this particular case (triangle mesh, vertex interpolation), the exported value can be calculated via barycentric interpolation of three values that are taken from the points of the current triangle.
+In this particular case (triangle mesh with vertex interpolated primvar), the exported value can be calculated via barycentric interpolation of three values that are taken from the points of the current triangle.
 
 # API proposal
 
@@ -73,15 +70,15 @@ rprMaterialNodeSetInputNByKey(diffuseNode, RPR_MATERIAL_INPUT_COLOR, primvarNode
 ### Geometry
 
 ```
+int numPoints;
 rpr_shape mesh;
 /* Create mesh */
 
-const int numPoints;
 std::vector<float> rgbNoise;
 for (int i = 0; i < numPoints; ++i) {
-	for (int j = 0; j < 3; ++j) {
-		rgbNoise.push_back(getNoise(i * 3 + j));
-	}
+    for (int j = 0; j < 3; ++j) {
+        rgbNoise.push_back(getNoise(i * 3 + j));
+    }
 }
 
 // Create primvar rpr_buffer
