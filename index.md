@@ -1,37 +1,96 @@
-## Welcome to GitHub Pages
+# Overview
 
-You can use the [editor on GitHub](https://github.com/hshakula/rpr-primvar-proposal/edit/gh-pages/index.md) to maintain and preview the content for your website in Markdown files.
+In USD it's possible to define arbitrary data for a primitive that can be referenced in material graphs for any sort of calculations.
+This data can vary across the primitive in different ways (i.e. data interpolation):
 
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
+* per vertex - values defined for each vertex (position) - `vertex`
+* per face vertex - values defined for each vertex of each face - `faceVarying`
+* per face - one value for each face - `uniform`
+* per primitive - one value for primitive - `constant`
 
-### Markdown
 
-Markdown is a lightweight and easy-to-use syntax for styling your writing. It includes conventions for
+This data is typically identified by name and called primvar.
+Primvar can be seen as geometry's data export socket that can be connected to the material. 
 
-```markdown
-Syntax highlighted code block
+## High-Level Example
 
-# Header 1
-## Header 2
-### Header 3
+Trivial combination of geometry primitive and material primitive.
 
-- Bulleted
-- List
+### Material 
 
-1. Numbered
-2. List
+Let's say our material has `color` property.
+Instead of explicitly setting `color` value (to vec4/to texture/etc) we specify that `color` value is imported from the geometry that uses this material. For example, the name of the primvar used here is "rgbnoise".
+The material does not care how exactly a particular geometry calculates (exports) this value for each ray hit point.
+The material only declares that some primvar should be used here or there.
+If a particular geometry does not have a required primvar, we use some fallback value.
 
-**Bold** and _Italic_ and `Code` text
+### Geometry
 
-[Link](url) and ![Image](src)
+Let's say our geometry primitive is a triangle mesh.
+This mesh has points, indices, and primvar of vec3 array type named "rgbnoise" with vertex interpolation (one vec3 value for each point).
+So this geometry should define an export socket with "rgbnoise" name.
+In this particular case (triangle mesh, vertex interpolation), the exported value can be calculated via barycentric interpolation of three values that are taken from the points of the current triangle.
+
+# API proposal
+
+* New rpr_material_node_type: `RPR_MATERIAL_NODE_PRIMVAR`
+* New rpr_material_node_input: `RPR_MATERIAL_INPUT_ID`, `RPR_MATERIAL_INPUT_FALLBACK`
+* New function to set primvar id: `rprMaterialNodeSetInputStringByKey(rpr_material_node, rpr_material_node_input, const char*)`
+* New enum for primvar interpolation:
+    ```
+    enum rpr_primvar_interpolation_type {
+        RPR_PRIMVAR_INTERPOLATION_CONSTANT,
+        RPR_PRIMVAR_INTERPOLATION_UNIFORM,
+        RPR_PRIMVAR_INTERPOLATION_VERTEX,
+        RPR_PRIMVAR_INTERPOLATION_FACE_VARYING,
+    }
+    ```
+* New function to set shape primvar: `rprShapeSetPrimvar(rpr_shape, const char* id, rpr_primvar_interpolation_type, rpr_buffer data)`
+
+## Example
+
+### Material
+
+```
+const char* primvarId = "rgbnoise";
+
+rpr_material_node diffuseNode;
+/* Create diffuse node */
+
+// Create primvar node
+rpr_material_node primvarNode;
+rprMaterialSystemreateNode(matSys, RPR_MATERIAL_NODE_PRIMVAR, &primvarNode);
+
+// Set primvar node inputs
+rprMaterialNodeSetInputStringByKey(primvarNode, RPR_MATERIAL_INPUT_ID, primvarId);
+rprMaterialNodeSetInputFByKey(primvarNode, RPR_MATERIAL_INPUT_FALLBACK, 1.0f, 0.0f, 1.0f, 1.0f); // fallback to pink
+
+// Use primvar node as color property
+rprMaterialNodeSetInputNByKey(diffuseNode, RPR_MATERIAL_INPUT_COLOR, primvarNode);
+
 ```
 
-For more details see [GitHub Flavored Markdown](https://guides.github.com/features/mastering-markdown/).
+### Geometry
 
-### Jekyll Themes
+```
+rpr_shape mesh;
+/* Create mesh */
 
-Your Pages site will use the layout and styles from the Jekyll theme you have selected in your [repository settings](https://github.com/hshakula/rpr-primvar-proposal/settings). The name of this theme is saved in the Jekyll `_config.yml` configuration file.
+const int numPoints;
+std::vector<float> rgbNoise;
+for (int i = 0; i < numPoints; ++i) {
+	for (int j = 0; j < 3; ++j) {
+		rgbNoise.push_back(getNoise(i * 3 + j));
+	}
+}
 
-### Support or Contact
+// Create primvar rpr_buffer
+rpr_buffer_desc bufferDesc = {};
+bufferDesc.nb_element = numPoints;
+bufferDesc.element_type = RPR_BUFFER_ELEMENT_TYPE_FLOAT32;
+bufferDesc.element_channel_size = 3;
+rpr_buffer buffer;
+rprContextCreateBuffer(rprContext, &bufferDesc, rgbNoise.data(), &buffer);
 
-Having trouble with Pages? Check out our [documentation](https://docs.github.com/categories/github-pages-basics/) or [contact support](https://github.com/contact) and we’ll help you sort it out.
+rprShapeSetPrimvar(mesh, primvarId, RPR_PRIMVAR_INTERPOLATION_VERTEX, buffer);
+```
